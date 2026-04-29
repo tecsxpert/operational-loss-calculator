@@ -1,0 +1,15 @@
+
+
+
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/operational_loss_db
+    username: postgres
+    password: admin123/g
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true

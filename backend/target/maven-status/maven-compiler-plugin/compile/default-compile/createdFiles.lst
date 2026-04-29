@@ -1,0 +1,4 @@
+com\internship\tool\entity\Loss.class
+com\internship\tool\Application.class
+com\internship\tool\repository\LossRepository.class
+com\internship\tool\controller\LossController.class
