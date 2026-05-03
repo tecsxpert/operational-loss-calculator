@@ -17,7 +17,7 @@ class GroqClient:
         """
         # Automatically loads from the GROQ_API_KEY environment variable
         # assuming dotenv has been loaded by the caller.
-        self.client = Groq(api_key=api_key)
+        self.client = Groq(api_key=api_key or os.environ.get("GROQ_API_KEY"))
         self.default_model = "llama-3.3-70b-versatile"
 
     def get_structured_response(self, prompt: str, system_prompt: Optional[str] = None, max_attempts: int = 3, temperature: float = 0.3, max_tokens: int = 1024) -> Dict[str, Any]:

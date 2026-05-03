@@ -1,0 +1,10 @@
+Analyze the following operational loss event and provide a structured response in JSON format.
+The JSON must contain the following keys:
+- summary: A brief 1-sentence overview of the event.
+- detailed_analysis: A thorough explanation of what happened and why.
+- impact: The financial and operational consequences.
+- risk_level: One of "Low", "Medium", "High", or "Critical".
+
+Event Description: {description}
+Event Severity: {severity}
+

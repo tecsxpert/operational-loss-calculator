@@ -1,0 +1,10 @@
+Generate a comprehensive operational loss incident report based on the following details.
+The JSON must contain the following keys:
+- title: A professional title for the incident report.
+- summary: A high-level executive summary.
+- overview: A detailed chronological overview of the event.
+- key_items: A list of the most critical factors contributing to the loss.
+- recommendations: A list of 3 actionable mitigation strategies.
+
+Event Description: {description}
+Event Severity: {severity}
