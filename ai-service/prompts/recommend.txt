@@ -1,10 +1,14 @@
 Based on the following operational loss event, provide 3 actionable recommendations to prevent future occurrences.
-The JSON must contain a key "recommendations" which is a list of 3 objects.
-Each object must have:
-- action_type: Category of the action (e.g., Process, Technology, Training).
-- description: Clear explanation of what needs to be done.
-- priority: One of "Low", "Medium", "High".
+You MUST output valid JSON with the exact key: 'recommendations' containing a list of exactly three strings.
 
 Event Description: {description}
 Event Severity: {severity}
 
+Example:
+{
+  "recommendations": [
+    "Implement automated pre-trade hard blocks for order sizes exceeding standard deviation limits.",
+    "Require dual-authorization (four-eyes principle) for trades exceeding $10,000 in nominal value.",
+    "Enhance the trading UI to require explicit confirmation of zero counts on large orders."
+  ]
+}

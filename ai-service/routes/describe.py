@@ -12,48 +12,55 @@ groq_client = GroqClient()
 
 def load_prompt(filename):
     path = os.path.join(os.path.dirname(__file__), '../prompts', filename)
-    with open(path, 'r') as f:
-        return f.read()
+    try:
+        with open(path, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.error(f"Prompt file not found: {path}")
+        return "Analyze this operational loss scenario: {description}"
 
 @describe_bp.route('/describe', methods=['POST'])
 def describe_event():
-    data = request.get_json()
+    # Use sanitized JSON if available from middleware, otherwise use raw JSON
+    data = getattr(request, 'sanitized_json', request.get_json(silent=True) or {})
+    
+    # Support both 'description' (local) and 'scenario' (origin/main)
+    description = data.get('description') or data.get('scenario')
     
     # Input Validation
-    if not data or 'description' not in data:
-        return jsonify({"error": "Missing 'description' in request body"}), 400
+    if not description:
+        return jsonify({"error": "Bad Request", "message": "Missing 'description' or 'scenario' in request body"}), 400
     
-    description = data['description']
-    severity = data.get('severity', 'Medium') # Default to Medium if not provided
+    severity = data.get('severity', 'Medium') 
     
     try:
         # Load and format prompt
         prompt_template = load_prompt('describe.txt')
-        prompt = prompt_template.format(description=description, severity=severity)
+        # Format with what we have
+        prompt = prompt_template.replace('{description}', description).replace('{severity}', severity)
         
         # Call Groq
+        # Note: In origin/main, the system prompt was in prompts.py. 
+        # Here we use the one from describe.txt or a default.
         result = groq_client.get_structured_response(
             prompt=prompt,
-            system_prompt="You are an expert risk analyst specializing in operational loss."
+            system_prompt="You are a senior operational risk analyst with deep expertise in Basel III operational risk categorization."
         )
         
-        # Add metadata
+        # Add metadata (merged from local features)
         result['generated_at'] = datetime.now().isoformat()
         result['is_fallback'] = False
         
         return jsonify(result), 200
 
-        
     except Exception as e:
         logger.error(f"Error in /describe: {str(e)}")
-        # Fallback response to avoid 500 errors
+        # Fallback response to avoid 500 errors (merged from local requirements)
         fallback = {
-            "summary": "Error processing event description.",
-            "detailed_analysis": "The AI service was unable to process the request at this time.",
-            "impact": "Unknown",
-            "risk_level": "Unknown",
+            "risk_type": "Unknown",
+            "root_cause": "Processing Error",
+            "description": f"The AI service was unable to process the request: {str(e)}",
             "generated_at": datetime.now().isoformat(),
             "is_fallback": True
         }
-        return jsonify(fallback), 200 # Returning 200 with fallback as per requirements to avoid 500s
-
+        return jsonify(fallback), 200 

@@ -12,29 +12,36 @@ groq_client = GroqClient()
 
 def load_prompt(filename):
     path = os.path.join(os.path.dirname(__file__), '../prompts', filename)
-    with open(path, 'r') as f:
-        return f.read()
+    try:
+        with open(path, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.error(f"Prompt file not found: {path}")
+        return "Generate a report for: {description}"
 
 @report_bp.route('/generate-report', methods=['POST'])
 def generate_report():
-    data = request.get_json()
+    # Use sanitized JSON
+    data = getattr(request, 'sanitized_json', request.get_json(silent=True) or {})
+    
+    # Support both 'description' and 'scenario'
+    description = data.get('description') or data.get('scenario')
     
     # Input Validation
-    if not data or 'description' not in data:
-        return jsonify({"error": "Missing 'description' in request body"}), 400
+    if not description:
+        return jsonify({"error": "Bad Request", "message": "Missing 'description' or 'scenario' in request body"}), 400
     
-    description = data['description']
     severity = data.get('severity', 'Medium')
     
     try:
         # Load and format prompt
         prompt_template = load_prompt('report.txt')
-        prompt = prompt_template.format(description=description, severity=severity)
+        prompt = prompt_template.replace('{description}', description).replace('{severity}', severity)
         
         # Call Groq
         result = groq_client.get_structured_response(
             prompt=prompt,
-            system_prompt="You are a senior risk reporting officer."
+            system_prompt="You are a senior risk reporting officer. Generate a professional operational loss incident report."
         )
         
         # Add metadata
