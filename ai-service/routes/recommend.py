@@ -7,6 +7,10 @@ from services.groq_client import GroqClient
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Validate GROQ_API_KEY is set at import time
+if not os.environ.get('GROQ_API_KEY'):
+    raise EnvironmentError("GROQ_API_KEY environment variable not set. Cannot initialize Groq client.")
+
 recommend_bp = Blueprint('recommend', __name__)
 groq_client = GroqClient()
 
@@ -51,15 +55,10 @@ def recommend_actions():
         return jsonify(result), 200
 
     except Exception as e:
-        logger.error(f"Error in /recommend: {str(e)}")
-        # Fallback response with 3 items as required
+        logger.error(f"Error in recommend: {str(e)}")
         fallback = {
-            "recommendations": [
-                "Review and update standard operating procedures for the affected area.",
-                "Conduct mandatory refresher training for all staff involved in the process.",
-                "Implement automated monitoring and alerts to detect similar events in real-time."
-            ],
+            "recommendations": ["Unable to process request"],
             "is_fallback": True,
-            "generated_at": datetime.now().isoformat()
+            "error": str(e)
         }
-        return jsonify(fallback), 200
+        return jsonify(fallback), 500

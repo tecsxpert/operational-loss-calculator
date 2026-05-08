@@ -7,24 +7,33 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.core.ParameterizedTypeReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Objects;
 
 @Service
 public class AiServiceClient {
 
     private static final Logger logger = LoggerFactory.getLogger(AiServiceClient.class);
     private final RestTemplate restTemplate;
-    private final String baseUrl = "http://localhost:5000";
+    private final String baseUrl;
 
     public AiServiceClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(10000); // 10 seconds timeout as per Day 4 requirements
+        factory.setConnectTimeout(10000); // 10 seconds timeout as per requirements
         factory.setReadTimeout(10000);    // 10 seconds timeout
         this.restTemplate = new RestTemplate(factory);
+        
+        // Support HTTPS for production deployments via environment variable
+        String envUrl = System.getenv("AI_SERVICE_URL");
+        this.baseUrl = (envUrl != null && !envUrl.isEmpty()) 
+            ? envUrl 
+            : "http://localhost:5000";
+        logger.info("AI Service URL configured: {}", this.baseUrl);
     }
 
     public Map<String, Object> getDescription(String scenario) {
@@ -59,7 +68,11 @@ public class AiServiceClient {
 
             HttpEntity<Map<String, String>> request = new HttpEntity<>(requestBody, headers);
             
-            ResponseEntity<Map> response = restTemplate.postForEntity(baseUrl + endpoint, request, Map.class);
+            ResponseEntity<Map<String, Object>> response = restTemplate.postForEntity(
+                baseUrl + endpoint, 
+                request, 
+                new ParameterizedTypeReference<Map<String, Object>>() {}
+            );
             return response.getBody();
             
         } catch (Exception e) {

@@ -7,6 +7,10 @@ from services.groq_client import GroqClient
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Validate GROQ_API_KEY is set at import time
+if not os.environ.get('GROQ_API_KEY'):
+    raise EnvironmentError("GROQ_API_KEY environment variable not set. Cannot initialize Groq client.")
+
 describe_bp = Blueprint('describe', __name__)
 groq_client = GroqClient()
 
@@ -54,13 +58,10 @@ def describe_event():
         return jsonify(result), 200
 
     except Exception as e:
-        logger.error(f"Error in /describe: {str(e)}")
-        # Fallback response to avoid 500 errors (merged from local requirements)
+        logger.error(f"Error in describe: {str(e)}")
         fallback = {
-            "risk_type": "Unknown",
-            "root_cause": "Processing Error",
-            "description": f"The AI service was unable to process the request: {str(e)}",
-            "generated_at": datetime.now().isoformat(),
-            "is_fallback": True
+            "description": "Unable to process request",
+            "is_fallback": True,
+            "error": str(e)
         }
-        return jsonify(fallback), 200 
+        return jsonify(fallback), 500

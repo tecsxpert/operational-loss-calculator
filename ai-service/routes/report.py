@@ -7,6 +7,10 @@ from services.groq_client import GroqClient
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Validate GROQ_API_KEY is set at import time
+if not os.environ.get('GROQ_API_KEY'):
+    raise EnvironmentError("GROQ_API_KEY environment variable not set. Cannot initialize Groq client.")
+
 report_bp = Blueprint('report', __name__)
 groq_client = GroqClient()
 
@@ -51,15 +55,10 @@ def generate_report():
         return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"Error in /generate-report: {str(e)}")
-        # Fallback response
+        logger.error(f"Error in report: {str(e)}")
         fallback = {
-            "title": "Incident Report - Error",
-            "summary": "The AI service was unable to generate a full report.",
-            "overview": "Processing failed due to technical issues.",
-            "key_items": ["System timeout or API error"],
-            "recommendations": ["Contact IT support", "Retry generation later"],
-            "generated_at": datetime.now().isoformat(),
-            "is_fallback": True
+            "report": "Unable to generate report",
+            "is_fallback": True,
+            "error": str(e)
         }
-        return jsonify(fallback), 200
+        return jsonify(fallback), 500

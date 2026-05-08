@@ -2,6 +2,7 @@ import os
 import logging
 import bleach
 import re
+import datetime
 from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -66,7 +67,15 @@ def check_injection_in_data(data):
 def create_app():
     app = Flask(__name__)
     
-    # Configure Rate Limiter (30 req/min as per Day 3 spec)
+    # Configuration
+    app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
+    app.config['JSON_SORT_KEYS'] = False
+    
+    # Debug mode based on environment
+    debug_mode = os.environ.get('FLASK_ENV') == 'development'
+    
+    # Configure Rate Limiter (30 req/min as per spec)
+    # For multi-instance deployments, use Redis: storage_uri="redis://localhost:6379"
     limiter = Limiter(
         get_remote_address,
         app=app,
@@ -97,21 +106,47 @@ def create_app():
                     # Attach sanitized data to request object
                     request.sanitized_json = sanitized_data
             except Exception as e:
-                logger.error(f"Error in security middleware: {e}")
-                pass 
+                logger.error(f"Security middleware error parsing JSON: {str(e)}")
+                return jsonify({"error": "Bad Request", "message": "Invalid JSON"}), 400 
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        logger.warning(f"Bad request: {error}")
+        return jsonify({"error": "Bad Request", "message": str(error)}), 400
+
+    @app.errorhandler(404)
+    def not_found(error):
+        logger.warning(f"Not found: {error}")
+        return jsonify({"error": "Not Found", "message": "Endpoint not found"}), 404
 
     @app.errorhandler(429)
     def ratelimit_handler(e):
+        logger.warning(f"Rate limit exceeded from {request.remote_addr}")
         return jsonify({"error": "Too Many Requests", "message": f"Rate limit exceeded: {e.description}"}), 429
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        logger.error(f"Internal server error: {error}")
+        return jsonify({"error": "Internal Server Error", "message": "An error occurred"}), 500
+
+    @app.errorhandler(Exception)
+    def handle_exception(error):
+        logger.error(f"Unhandled exception: {type(error).__name__} - {str(error)}")
+        return jsonify({"error": "Internal Server Error", "message": "An error occurred"}), 500
 
     @app.route('/health', methods=['GET'])
     def health_check():
-        return {"status": "healthy", "service": "operational-loss-calculator-ai"}, 200
+        return jsonify({
+            "status": "healthy",
+            "service": "operational-loss-calculator-ai",
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }), 200
 
     return app
 
 if __name__ == '__main__':
     app = create_app()
+    debug_mode = os.environ.get('FLASK_ENV') == 'development'
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting AI Service on port {port}...")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    logger.info(f"Starting AI Service on port {port}... (debug mode: {debug_mode})")
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
