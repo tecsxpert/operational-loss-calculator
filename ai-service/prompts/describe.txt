@@ -1,0 +1,19 @@
+Analyze the following operational loss event and provide a structured response in JSON format.
+The JSON must contain the following keys:
+- risk_type: The Basel III operational risk category.
+- root_cause: The primary driver of the loss (e.g., Human Error, System Failure).
+- description: A thorough explanation of what happened and why.
+- risk_level: One of "Low", "Medium", "High", or "Critical".
+- summary: A brief 1-sentence overview of the event.
+
+Event Description: {description}
+Event Severity: {severity}
+
+Example:
+{
+  "risk_type": "Execution, Delivery, and Process Management",
+  "root_cause": "Human Error / Data Entry",
+  "description": "The loss was caused by a manual data entry error during trade execution, leading to an over-allocation of shares sold.",
+  "risk_level": "Medium",
+  "summary": "Fat-finger error during trade execution resulted in $50k loss."
+}

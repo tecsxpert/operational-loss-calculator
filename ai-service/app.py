@@ -1,27 +1,29 @@
+import os
+import logging
+import bleach
 import re
+import datetime
 from flask import Flask, request, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv, find_dotenv
-from groq_client import GroqClient
-from prompts import SYSTEM_PROMPT_DESCRIBE, SYSTEM_PROMPT_RECOMMEND
 
+# Load environment variables
 load_dotenv(find_dotenv())
 
-app = Flask(__name__)
+# Import routes
+from routes.describe import describe_bp
+from routes.recommend import recommend_bp
+from routes.report import report_bp
 
-# Configure Limiter
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["30 per minute"],
-    storage_uri="memory://"
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
-# Initialize GroqClient
-groq_client = GroqClient()
-
-# Prompt Injection detection list
+# Prompt Injection detection list (from Day 6 progress)
 MALICIOUS_PHRASES = [
     "override system instructions",
     "ignore previous instructions",
@@ -34,8 +36,8 @@ MALICIOUS_PHRASES = [
 def strip_html_tags(text):
     if not isinstance(text, str):
         return text
-    clean = re.compile('<.*?>')
-    return re.sub(clean, '', text)
+    # Use bleach for safer HTML stripping
+    return bleach.clean(text, tags=[], strip=True)
 
 def sanitize_data(data):
     if isinstance(data, dict):
@@ -62,68 +64,89 @@ def check_injection_in_data(data):
         return contains_prompt_injection(data)
     return False
 
-@app.before_request
-def security_middleware():
-    if request.is_json and request.get_data():
-        # Get raw json
-        try:
-            data = request.get_json(force=True, silent=True)
-            if data:
-                # 1. Strip HTML tags
-                sanitized_data = sanitize_data(data)
-                
-                # 2. Check for Prompt Injection
-                if check_injection_in_data(sanitized_data):
-                    return jsonify({"error": "Bad Request", "message": "Malicious input detected. Prompt injection blocked."}), 400
-                
-                # Update the request data with sanitized data
-                # Flask doesn't easily allow mutating request.json, but we can store it in request.environ or g
-                # Better yet, since we can't easily overwrite request.json cleanly, we attach to request module
-                request.sanitized_json = sanitized_data
-        except Exception:
-            pass # Malformed JSON
+def create_app():
+    app = Flask(__name__)
+    
+    # Configuration
+    app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # 1MB max request size
+    app.config['JSON_SORT_KEYS'] = False
+    
+    # Debug mode based on environment
+    debug_mode = os.environ.get('FLASK_ENV') == 'development'
+    
+    # Configure Rate Limiter (30 req/min as per spec)
+    # For multi-instance deployments, use Redis: storage_uri="redis://localhost:6379"
+    limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=["30 per minute"],
+        storage_uri="memory://",
+    )
 
-@app.errorhandler(429)
-def ratelimit_handler(e):
-    return jsonify({"error": "Too Many Requests", "message": f"Rate limit exceeded: {e.description}"}), 429
+    # Register Blueprints
+    app.register_blueprint(describe_bp)
+    app.register_blueprint(recommend_bp)
+    app.register_blueprint(report_bp)
 
-@app.route('/describe', methods=['POST'])
-def describe_incident():
-    data = getattr(request, 'sanitized_json', request.get_json(silent=True) or {})
-    scenario = data.get("scenario")
-    
-    if not scenario:
-        return jsonify({"error": "Bad Request", "message": "Scenario is required"}), 400
-        
-    prompt = f"Analyze the following operational loss scenario and describe the risk type and root cause. MUST output JSON with keys 'risk_type', 'root_cause', and 'description'.\n\nScenario: {scenario}"
-    
-    try:
-        result = groq_client.get_structured_response(
-            prompt=prompt,
-            system_prompt=SYSTEM_PROMPT_DESCRIBE
-        )
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
+    # Security Middleware (from Day 6 progress)
+    @app.before_request
+    def security_middleware():
+        if request.is_json and request.get_data():
+            try:
+                data = request.get_json(force=True, silent=True)
+                if data:
+                    # 1. Strip HTML tags recursively
+                    sanitized_data = sanitize_data(data)
+                    
+                    # 2. Check for Prompt Injection recursively
+                    if check_injection_in_data(sanitized_data):
+                        logger.warning(f"Malicious input detected and blocked: {sanitized_data}")
+                        return jsonify({"error": "Bad Request", "message": "Malicious input detected. Prompt injection blocked."}), 400
+                    
+                    # Attach sanitized data to request object
+                    request.sanitized_json = sanitized_data
+            except Exception as e:
+                logger.error(f"Security middleware error parsing JSON: {str(e)}")
+                return jsonify({"error": "Bad Request", "message": "Invalid JSON"}), 400 
 
-@app.route('/recommend', methods=['POST'])
-def recommend_action():
-    data = getattr(request, 'sanitized_json', request.get_json(silent=True) or {})
-    scenario = data.get("scenario")
-    
-    if not scenario:
-        return jsonify({"error": "Bad Request", "message": "Scenario is required"}), 400
-        
-    prompt = f"Based on the following operational loss scenario, recommend three actionable mitigation strategies. MUST output JSON with a key 'recommendations' which is a list of strings.\n\nScenario: {scenario}"
-    
-    try:
-        result = groq_client.get_structured_response(
-            prompt=prompt,
-            system_prompt=SYSTEM_PROMPT_RECOMMEND
-        )
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
+    @app.errorhandler(400)
+    def bad_request(error):
+        logger.warning(f"Bad request: {error}")
+        return jsonify({"error": "Bad Request", "message": str(error)}), 400
+
+    @app.errorhandler(404)
+    def not_found(error):
+        logger.warning(f"Not found: {error}")
+        return jsonify({"error": "Not Found", "message": "Endpoint not found"}), 404
+
+    @app.errorhandler(429)
+    def ratelimit_handler(e):
+        logger.warning(f"Rate limit exceeded from {request.remote_addr}")
+        return jsonify({"error": "Too Many Requests", "message": f"Rate limit exceeded: {e.description}"}), 429
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        logger.error(f"Internal server error: {error}")
+        return jsonify({"error": "Internal Server Error", "message": "An error occurred"}), 500
+
+    @app.errorhandler(Exception)
+    def handle_exception(error):
+        logger.error(f"Unhandled exception: {type(error).__name__} - {str(error)}")
+        return jsonify({"error": "Internal Server Error", "message": "An error occurred"}), 500
+
+    @app.route('/health', methods=['GET'])
+    def health_check():
+        return jsonify({
+            "status": "healthy",
+            "service": "operational-loss-calculator-ai",
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }), 200
+
+    return app
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app = create_app()
+    debug_mode = os.environ.get('FLASK_ENV') == 'development'
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting AI Service on port {port}... (debug mode: {debug_mode})")
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

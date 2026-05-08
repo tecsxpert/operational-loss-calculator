@@ -17,7 +17,7 @@ class GroqClient:
         """
         # Automatically loads from the GROQ_API_KEY environment variable
         # assuming dotenv has been loaded by the caller.
-        self.client = Groq(api_key=api_key)
+        self.client = Groq(api_key=api_key or os.environ.get("GROQ_API_KEY"))
         self.default_model = "llama-3.3-70b-versatile"
 
     def get_structured_response(self, prompt: str, system_prompt: Optional[str] = None, max_attempts: int = 3, temperature: float = 0.3, max_tokens: int = 1024) -> Dict[str, Any]:
@@ -61,9 +61,14 @@ class GroqClient:
                     raise ValueError("Empty response received from Groq.")
                     
                 # Parse JSON string into dictionary
-                parsed_json = json.loads(content)
-                logger.debug(f"Successfully obtained and parsed JSON response on attempt {attempt}.")
-                return parsed_json
+                try:
+                    parsed_json = json.loads(content)
+                    logger.debug(f"Successfully obtained and parsed JSON response on attempt {attempt}.")
+                    return parsed_json
+                except json.JSONDecodeError as json_err:
+                    logger.error(f"Failed to parse JSON response: {json_err}")
+                    logger.error(f"Raw content: {content}")
+                    raise ValueError(f"Invalid JSON from API: {str(json_err)}")
                 
             except Exception as e:
                 logger.error(f"Attempt {attempt} failed: {e}")
